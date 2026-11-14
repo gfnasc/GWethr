@@ -1,8 +1,7 @@
 // Chuva nas próximas horas: os três métodos, o destaque de cada janela e os avisos
 // "Está chovendo aqui" das últimas 24 h e o "Não choveu hoje" (com as chuvas do METAR de hoje). Exige login ou token de leitura.
 
-export default defineEventHandler(async (event) => {
-  await requireReadAccess(event)
+export default defineReadHandler(async (event) => {
   const { deviceId, site } = await loadSite()
   if (!deviceId) throw createError({ statusCode: 404, message: 'nenhuma estação cadastrada' })
   const sql = useSql()

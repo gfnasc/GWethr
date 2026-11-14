@@ -5,15 +5,15 @@
 //   M2T  igual ao M2: base −2,2 e peso 1 em cada termo
 //   M4   média, na escala logit, do M2 e do M3: base −1,1, peso 0,5 em cada termo e 0,5 no modelo
 // Cada peso aprendido é puxado para o de partida (prior gaussiano), então com poucos dados o
-// método continua perto do original e só muda o que o placar sustentar. Previsões emitidas a
-// cada 10 min se sobrepõem: o treino usa uma rodada a cada 20 min, cada uma valendo 1/3 (uma por
-// hora, na prática), o que também reduz o tráfego com o banco.
+// método continua perto do original e só muda o que o placar sustentar. Previsões seguidas se
+// sobrepõem: o treino vale uma rodada por hora, na prática. Nas rodadas de 10 min (até 13/11/2026)
+// usa uma a cada 20 min, valendo 1/3; nas de 15 min, uma a cada 30 min, valendo 1/2.
 // O treino roda depois do envio (no máximo a cada 3 h) e guarda os pesos em rain_models.
 
 type Learned = 'm2t' | 'm4'
 export type Weights = Record<string, number> // 'bias', termos de TERM_KEYS e 'modelo' (M4)
 
-const ROW_WEIGHT = 1 / 3
+const ROUNDS_15_FROM = '2026-11-14T03:00:00Z' // primeira rodada de 15 min (00:00 local de 14/11)
 const PRIOR_PRECISION = 4 // desvio de 0,5 em torno do peso de partida
 const TRAIN_EVERY_MS = 3 * 3600_000 - 5 * 60_000
 const TRAIN_DAYS = 60
@@ -87,7 +87,7 @@ function solve(A: number[][], b: number[]): number[] {
 }
 
 // Regressão logística com prior gaussiano (MAP) por Newton-Raphson.
-export function fitLogistic(rows: { x: number[]; off: number; y: number }[], prior: number[]): number[] {
+export function fitLogistic(rows: { x: number[]; off: number; y: number; wt: number }[], prior: number[]): number[] {
   const n = prior.length
   let w = [...prior]
   for (let it = 0; it < 30; it++) {
@@ -95,7 +95,7 @@ export function fitLogistic(rows: { x: number[]; off: number; y: number }[], pri
     const H = prior.map((_, i) => prior.map((__, j) => (i === j ? PRIOR_PRECISION : 0)))
     for (const r of rows) {
       const p = sigmoid(r.x.reduce((a, xi, j) => a + xi * w[j]!, r.off))
-      const e = ROW_WEIGHT * (p - r.y), q = ROW_WEIGHT * p * (1 - p)
+      const e = r.wt * (p - r.y), q = r.wt * p * (1 - p)
       for (let i = 0; i < n; i++) {
         if (!r.x[i]) continue
         g[i]! += e * r.x[i]!
@@ -119,21 +119,22 @@ export async function trainRain(deviceId: string, force = false): Promise<number
     if (last?.at && Date.now() - new Date(last.at).getTime() < TRAIN_EVERY_MS) return 0
   }
   const data = (await sql`
-    select horizon_h, bool_or(outcome) as y,
+    select horizon_h, bool_or(outcome) as y, issued_at >= ${ROUNDS_15_FROM} as r15,
       (array_agg(features) filter (where method = 'm1'))[1] as f1,
       (array_agg(features) filter (where method = 'm2'))[1] as f2,
       max(prob) filter (where method = 'm3') as p3
     from rain_predictions
     where device_id = ${deviceId} and outcome is not null and method in ('m1', 'm2', 'm3') and issued_at > now() - make_interval(days => ${TRAIN_DAYS})
-      and extract(minute from issued_at)::int % 20 = 0
-    group by issued_at, horizon_h`) as { horizon_h: number; y: boolean; f1: any; f2: any; p3: number | null }[]
+      and ((issued_at < ${ROUNDS_15_FROM} and extract(minute from issued_at)::int % 20 = 0)
+        or (issued_at >= ${ROUNDS_15_FROM} and extract(minute from issued_at)::int % 30 = 0))
+    group by issued_at, horizon_h`) as { horizon_h: number; y: boolean; r15: boolean; f1: any; f2: any; p3: number | null }[]
 
   const out: { method: Learned; h: number; w: Weights; n: number; events: number }[] = []
   for (const method of ['m2t', 'm4'] as Learned[]) {
     const keys = keysOf(method)
     const prior = keys.map((k) => priorWeights(method)[k]!)
     for (const h of HORIZONS) {
-      const rows: { x: number[]; off: number; y: number }[] = []
+      const rows: { x: number[]; off: number; y: number; wt: number }[] = []
       for (const d of data) {
         if (d.horizon_h !== h) continue
         if (method === 'm2t' && !d.f2) continue
@@ -141,7 +142,7 @@ export async function trainRain(deviceId: string, force = false): Promise<number
         const terms: Pick<Term, 'key' | 'v'>[] = [...(m1Terms(d.f2 ?? d.f1)?.terms ?? []), ...(d.f2 ? airportTerms(d.f2) : [])]
         if (d.f2?.taf) terms.push({ key: 'taf', v: Number(d.f2.taf) })
         const s = BASE_LOGIT + terms.reduce((a, t) => a + t.v, 0)
-        rows.push({ x: vectorOf(method, terms, d.p3 ?? undefined), off: offsetFor(method, s, h), y: d.y ? 1 : 0 })
+        rows.push({ x: vectorOf(method, terms, d.p3 ?? undefined), off: offsetFor(method, s, h), y: d.y ? 1 : 0, wt: d.r15 ? 1 / 2 : 1 / 3 })
       }
       const w = rows.length ? fitLogistic(rows, prior) : prior
       out.push({ method, h, w: Object.fromEntries(keys.map((k, i) => [k, Math.round(w[i]! * 1000) / 1000])), n: rows.length, events: rows.filter((r) => r.y).length })

@@ -141,7 +141,8 @@ static void handleStatus() {
   if (u.lastOkEpoch) cloud["last_ok"] = u.lastOkEpoch;
   else cloud["last_ok"] = nullptr;
   cloud["last_http"] = u.lastHttp;
-  cloud["interval_s"] = UPLINK_INTERVAL_S;  // a média é enviada logo que o intervalo fecha
+  cloud["interval_s"] = UPLINK_SEND_S;  // envio em lotes, logo que fecha cada quarto de hora
+  cloud["avg_s"] = UPLINK_INTERVAL_S;   // cada média cobre 5 min
   cloud["last_error"] = u.lastError;
   if (u.configSentEpoch) cloud["config_sent"] = u.configSentEpoch;
   else cloud["config_sent"] = nullptr;

@@ -252,7 +252,7 @@ input[type=checkbox]{width:18px;height:18px;accent-color:var(--acc)}
     <table>
       <tr><td>Leitura dos sensores</td><td id="n_read">a cada 5 s</td></tr>
       <tr><td>Esta página</td><td id="n_page">–</td></tr>
-      <tr><td>Envio da média para a nuvem</td><td id="n_send">–</td></tr>
+      <tr><td>Envio das médias para a nuvem</td><td id="n_send">–</td></tr>
       <tr><td>Previsão de chuva (vem com o envio)</td><td id="n_rain">–</td></tr>
       <tr><td>Cópia da configuração</td><td>na hora, quando algo muda</td></tr>
     </table>
@@ -474,7 +474,7 @@ $("pwchg").onclick=async()=>{
   }catch(e){say("pwmsg",e.message,1)}
 };
 // Contadores: relógio da estação (epoch do /status) acertado a cada leitura e contado aqui a cada segundo.
-let devOff=null,ivl=300,rainAt=0,pageAt=Date.now()+5000,tests=null,pmode="auto";
+let devOff=null,ivl=900,rainAt=0,pageAt=Date.now()+5000,tests=null,pmode="auto";
 const mmss=s=>s<=0?"agora":Math.floor(s/60)+":"+String(Math.floor(s%60)).padStart(2,"0");
 function timers(){
   const pg=Math.max(0,Math.ceil((pageAt-Date.now())/1000));$("n_page").textContent="em "+pg+" s";

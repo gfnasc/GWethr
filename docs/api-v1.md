@@ -64,7 +64,7 @@ Status: `200`; `503` se ainda não houve nenhuma leitura.
             "hostname": "gwethr.local" },
   "time": { "synced": true, "tz": "<-03>3", "local": "2026-10-12T15:33:51", "epoch": 1791830031 },
   "cloud": { "configured": true, "url": "https://SEU-PROJETO.vercel.app", "queue": 0, "last_ok": 1791830000,
-             "last_http": 200, "last_error": "", "interval_s": 300, "config_sent": 1791830000, "config_pending": false,
+             "last_http": 200, "last_error": "", "interval_s": 900, "avg_s": 300, "config_sent": 1791830000, "config_pending": false,
              "tests": { "h72": { "end": 1792178722, "state": "andamento" }, "d30": { "end": 1794511522, "state": "andamento" } } },
   "sensors": { "aht20": true, "bmp280": true }
 }
@@ -166,6 +166,8 @@ Chance de chuva recebida da nuvem e estado do alerta no display.
   "last_report": null, "report_pending": false, "last_no_rain": null, "no_rain_pending": false }
 ```
 `fresh`: previsão com até 35 min (depois a estação deixa de mostrar). `p`/`m`: destaque de cada janela; `methods`: os cinco métodos, M1, M2, M2T (M2 treinado), M3 e M4 (combinado treinado), com `null` se o método não teve dados na rodada.
+
+`cloud.interval_s` (em `/api/v1/status`): intervalo entre envios, 900 s desde o firmware 0.16.0 (um lote com as médias de 5 min logo que fecha cada quarto de hora; antes, 300 s); `cloud.avg_s`: duração de cada média (300 s).
 
 `cloud.tests` (em `/api/v1/status`): fim previsto (epoch UTC, `null` antes de começar) e situação (`andamento`, `falhou`, `sucesso`, `aguardando`) dos testes de robustez (72 h) e da chuva (30 dias), recebidos da nuvem a cada envio.
 
@@ -306,7 +308,7 @@ Saúde para o teste de robustez, contada a partir da gravação do firmware atua
 O ambiente da estação: `now` (última média fora da sacada), `comfort` (`label`, `level` ok/atenção/alerta, faixas de temperatura e umidade), `dry` (umidade abaixo de 40 %), `mold` (horas com umidade ≥ 70 % nos últimos 3 dias), `window` (`action`: abrir, fechar ou tanto faz, e `reason`) e `lag` (atraso em horas e fração da variação de fora que chega dentro, por correlação hora a hora em 7 dias; `null` com `lag_needed_h` enquanto faltar dado).
 
 ### `GET /api/v1/sync` 🔐
-Horários (epoch ms) para os contadores do painel: `now` do servidor, `interval_s` dos envios (300) e, para `station`, `rain`, `metar`, `model` e `taf`, `last` (última atualização) e `next` (estimativa da próxima).
+Horários (epoch ms) para os contadores do painel: `now` do servidor, `interval_s` dos envios (900: um lote a cada quarto de hora) e, para `station`, `rain`, `metar`, `model` e `taf`, `last` (última atualização) e `next` (estimativa da próxima).
 
 ### `GET /api/v1/station` 🔐
 Estado da estação, local atual e a última cópia da configuração enviada por ela (`config`, ou `null` se ainda não chegou) com a hora em que chegou (`config_at`). Somente leitura: o painel não altera a configuração.

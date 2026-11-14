@@ -32,6 +32,10 @@ Painel web e API de nuvem da estação. Recebe as médias de 10 min enviadas pel
 
 Contrato completo: [../docs/api-v1.md](../docs/api-v1.md).
 
+As rotas de leitura guardam a resposta na memória da função até 90 s depois do próximo quarto de hora, quando chega o
+lote seguinte da estação (`server/utils/read-cache.ts`); qualquer POST limpa o cache, e o token de leitor conferido
+fica guardado por 6 h. Assim o painel aberto e os leitores não acordam o banco (Neon gratuito) a cada minuto.
+
 ## Configurar do zero
 
 Requisitos: Node 20+, pnpm e [Vercel CLI](https://vercel.com/docs/cli) logado.

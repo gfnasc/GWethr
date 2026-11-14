@@ -39,7 +39,7 @@ const items = computed(() => {
   return [
     { k: 'Página', v: left(pageAt.value - offset.value, 'atualizando…'), title: `Recarrega os dados a cada ${props.every} s` },
     { k: 'Média da estação', v: left(d?.station.next), title: `A estação envia uma média a cada ${(d?.interval_s ?? 300) / 60} min` },
-    { k: 'Previsão de chuva', v: left(d?.rain.next), title: 'Recalculada a cada 10 min' },
+    { k: 'Previsão de chuva', v: left(d?.rain.next), title: 'Recalculada a cada 15 min, a cada envio da estação' },
     { k: 'METAR', v: left(d?.metar.next, 'aguardando o aeroporto'), title: 'O aeroporto publica de hora em hora (ou antes, se o tempo mudar); a nuvem confere a cada envio' },
     { k: 'Modelo e TAF', v: left(d?.model.next), title: 'Open-Meteo e TAF a cada 30 min' },
   ]

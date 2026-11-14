@@ -1,6 +1,6 @@
 # GWethr
 
-Estação de chuva com **ESP32 DevKit v1**, sensores **AHT20** e **BMP280** e display **OLED SSD1306** (chamada GWeather até 13/10/2026 e GRain até 26/10/2026). Mede temperatura, umidade e pressão, mostra os dados no display e envia médias de 10 min para um painel em **Nuxt na Vercel**, com histórico e gráficos. O objetivo da versão 5 é prever chuva para 1 h, 2 h e 3 h cruzando o barômetro da estação com dados externos, com dois modos: **Outdoor** (lá fora) e **Indoor** (o ambiente onde a estação fica).
+Estação de chuva com **ESP32 DevKit v1**, sensores **AHT20** e **BMP280** e display **OLED SSD1306** (chamada GWeather até 13/10/2026 e GRain até 26/10/2026). Mede temperatura, umidade e pressão, mostra os dados no display e envia médias de 5 min, em lotes a cada 15 min, para um painel em **Nuxt na Vercel**, com histórico e gráficos. O objetivo da versão 5 é prever chuva para 1 h, 2 h e 3 h cruzando o barômetro da estação com dados externos, com dois modos: **Outdoor** (lá fora) e **Indoor** (o ambiente onde a estação fica).
 
 > *ESP32 rain station (AHT20 + BMP280 + SSD1306 OLED). Documentation in Portuguese.*
 
@@ -32,8 +32,8 @@ Estação de chuva com **ESP32 DevKit v1**, sensores **AHT20** e **BMP280** e di
 | 15 | Chuva v1: métodos M1 a M3, placar, aba Chuva, página e alertas no OLED | ✅ Concluída |
 | 16 | Indoor: conforto, ar seco, mofo, janela, atraso térmico | ✅ Concluída |
 | 17 | Robustez: watchdog, OTA, teste de 72 h | ✅ Concluída (teste de 72 h aprovado em 17/10, firmware 0.14.1) |
-| 18 | Chuva v2: M2 treinado (estação + aeroporto) e M4 combinado, com aprendizado (teste de 30 dias) | 🧪 Implementada; teste de 30 dias em andamento (desde 13/10) |
-| 19 | Interface física: botão (páginas, "Está chovendo aqui", tela), buzzer (alerta de chuva) e LED embutido (retorno visual) | Planejada |
+| 18 | Chuva v2: M2 treinado (estação + aeroporto) e M4 combinado, com aprendizado (teste de 30 dias) | ✅ Concluída (teste de 30 dias aprovado em 12/11: M2T e M4 venceram os métodos de pesos fixos) |
+| 19 | Interface física: botão (páginas, "Está chovendo aqui", tela), buzzer (alerta de chuva) e LED embutido (retorno visual) | ✅ Concluída (firmware 0.15.x) |
 | 20 | WhatsApp, configurado no ESP32 | Planejada (por último) |
 
 Plano completo: [docs/PLANO.md](docs/PLANO.md). Versão visual, com diagrama interativo de ligações e montagem passo a passo: [docs/plano.html](docs/plano.html) (baixe o arquivo e abra no navegador).
@@ -41,7 +41,7 @@ Plano completo: [docs/PLANO.md](docs/PLANO.md). Versão visual, com diagrama int
 ### Arquitetura
 
 ```
-ESP32 ──envia leituras a cada 10 min (HTTPS)──► Nuxt na Vercel (API + banco)
+ESP32 ──médias de 5 min, em lotes a cada 15 min (HTTPS)──► Nuxt na Vercel (API + banco)
   │                                                   │
   └─ página mínima em gwethr.local                     └─ painel completo, com login,
      (funciona sem internet)                             acessível de qualquer lugar
@@ -202,7 +202,9 @@ curl -u admin:SENHA -X PUT -H 'Content-Type: application/json' \
 
 ### Painel na nuvem (Nuxt na Vercel)
 
-O ESP32 calcula médias de 10 min, guarda numa fila na placa (reserva de até 14 dias sem internet) e envia por HTTPS para o app Nuxt em [`web/`](web), que grava no Postgres (Neon) e mostra o painel com login.
+O ESP32 calcula médias de 5 min, guarda numa fila na placa (reserva de até 14 dias sem internet) e envia em lotes, a cada quarto de hora, por HTTPS para o app Nuxt em [`web/`](web), que grava no Postgres (Neon) e mostra o painel com login.
+
+**Por que em lotes (firmware 0.16.0):** o Neon gratuito tem uma cota mensal de horas com o banco acordado, e o banco só dorme depois de 5 min parado. Com um envio a cada 5 min ele nunca dormia e a cota acabou em 31/10 (o painel ficou fora até a cota renovar, em 1/11; a fila da estação guardou tudo e nenhuma média se perdeu). Com um lote a cada 15 min o banco dorme entre um envio e outro. Pelo mesmo motivo, as rotas de leitura do painel guardam a resposta na memória da função até logo depois do próximo envio (`web/server/utils/read-cache.ts`): o painel aberto e o app da Gspresso não acordam o banco a cada minuto.
 
 Para montar a sua nuvem do zero (projeto na Vercel, banco, senha do painel e token da estação), siga [web/README.md](web/README.md). Depois, no console serial do ESP32:
 
@@ -222,7 +224,7 @@ O painel serve só para ver os dados; nada é configurado por ele. Quatro seçõ
 
 ### Dados de fora (Outdoor)
 
-A nuvem busca os dados de fora a cada envio da estação (a cada 10 min), sem cron:
+A nuvem busca os dados de fora a cada envio da estação (a cada 15 min), sem cron:
 
 - **METAR** do aeroporto mais próximo da localização, detectado sozinho ([aviationweather.gov](https://aviationweather.gov/data/api/), sem chave). Os aeroportos publicam de hora em hora, ou antes quando o tempo muda.
 - **Open-Meteo** (sem chave): condição atual a cada 30 min, usada quando o METAR tem mais de 90 min, e previsão diária.
@@ -232,7 +234,7 @@ Sem localização, o painel mostra só o Indoor. A localização e o aeroporto d
 
 ### Chuva nas próximas 1, 2 e 3 horas
 
-A cada 10 min (um envio sim, outro não), a nuvem calcula cinco métodos, do menos ao mais completo, e guarda cada previsão:
+A cada envio da estação (a cada 15 min; de 10 em 10 min até 13/11), a nuvem calcula cinco métodos, do menos ao mais completo, e guarda cada previsão:
 
 | Método | Usa |
 |---|---|
@@ -245,6 +247,18 @@ A cada 10 min (um envio sim, outro não), a nuvem calcula cinco métodos, do men
 Quando a janela termina, a previsão é conferida: choveu se alguém tocou em **Está chovendo aqui** (no painel ou na página local) ou se o METAR registrou chuva (fora "nas proximidades"). Se faltar METAR dentro da janela (o aeroporto às vezes fica horas sem publicar de madrugada), valem os boletins vizinhos: sem chuva no anterior nem no seguinte (que registra a chuva caída desde o último, como RERA) e sem buraco de mais de 3 h, não choveu. A chuva estimada pelo modelo só decide quando o aeroporto fica mais de 3 h calado: é cálculo, não observação, e na madrugada de 15/10 marcou chuva com o aeroporto de céu limpo. O aeroporto às vezes registra poucas gotas ou chuva que evapora antes do chão: o botão **Não choveu hoje** (painel e página local, com confirmação; no painel dá para desfazer) tira do placar toda chuva do METAR desde a meia-noite e confere de novo as previsões do dia. O placar de 30 dias mostra o erro de cada método; o destaque (card, página local e OLED) é, entre os métodos com dados suficientes (100 previsões e 5 chuvas), o de menor erro e, até lá, o modelo.
 
 **Como o M2T e o M4 aprendem:** cada regra do M1/M2 é um sinal com nome (pressão caindo, chovendo no aeroporto, TAF prevê chuva...). Uma regressão logística por janela (1, 2 e 3 h) reaprende o peso de cada sinal com as previsões conferidas dos últimos 60 dias, refeita a cada 3 h. O ponto de partida são os pesos fixos (o M2T começa igual ao M2; o M4, como a média do M2 e do M3), e cada peso é puxado de volta para ele, então com pouca chuva conferida os métodos ficam perto do original e só muda o que o placar sustenta. A aba Chuva mostra quanto cada peso mudou e o teste de 30 dias (contagem regressiva, cobertura das rodadas e a tabela "Frente a frente", que compara cada par de métodos só nas rodadas em que os dois saíram, já que o M2 e o M2T faltam quando o aeroporto não publica).
+
+**Resultado do teste de 30 dias (13/10 a 12/11, aprovado):** 125 rodadas perdidas de 432 toleradas (cobertura de ~97 %; quase todas na queda da nuvem de 31/10), 8.598 de 8.640 médias e 122 horas de chuva conferidas. Erro de Brier de cada método em todas as rodadas conferidas (menor é melhor):
+
+| Método | 1 h | 2 h | 3 h |
+|---|---|---|---|
+| **M2T** · M2 treinado | **0,069** | **0,100** | **0,128** |
+| **M4** · combinado treinado | 0,080 | 0,104 | 0,129 |
+| M2 · barômetro + aeroporto | 0,094 | 0,144 | 0,180 |
+| M1 · barômetro | 0,117 | 0,152 | 0,180 |
+| M3 · modelo numérico | 0,237 | 0,248 | 0,250 |
+
+Nos duelos (cada par só nas rodadas em que os dois saíram), o M4 venceu M1, M2 e M3 e o M2T venceu o M2 nas três janelas, os dois critérios de aceite. Contra a frequência média de chuva (Brier ~0,10 em 1 h), o M2T erra ~33 % menos. M2T e M4 empatam em 2–3 h (no duelo direto o M4 fica 0,002–0,004 à frente) e o M2T ganha em 1 h. O M3 sozinho é pior que a média: exagera (42 % de chance média para chuva em ~13 % das horas), mas é útil como ingrediente do M4. Ponto fraco de todos: pancadas de verão isoladas, que o aeroporto e o barômetro só veem quando chegam.
 
 ### Pressão calibrada pelo aeroporto
 
@@ -266,13 +280,13 @@ No painel, o gráfico de pressão mostra a estação e o QNH do aeroporto juntos
 | O quê | Quando |
 |---|---|
 | Leitura dos sensores (estação) | a cada 5 s |
-| Média enviada para a nuvem | a cada 5 min (intervalos :00, :05, :10...), logo que o intervalo fecha; com falha, tenta de novo em 1, 2, 4... até 30 min, e a fila guarda até 14 dias |
+| Médias de 5 min enviadas para a nuvem | em lotes de 3, logo que fecha cada quarto de hora (:00, :15, :30, :45); com falha, tenta de novo em 1, 2, 4... até 30 min, e a fila guarda até 14 dias |
 | Cópia da configuração para a nuvem | em todo envio e na hora (~2 s) quando algo muda na estação, ao ligar e no "Sincronizar agora" |
 | Avisos "Está chovendo aqui" e "Não choveu hoje" (estação → nuvem) | na hora; se falhar, de novo a cada 1 min |
 | Treino do M2T e do M4 | a cada 3 h (depois de um envio), com as previsões conferidas dos últimos 60 dias |
-| Previsão de chuva | a cada 10 min (a cada dois envios), antes da resposta: estação e painel recebem a mesma rodada |
+| Previsão de chuva | a cada envio (15 min), antes da resposta: estação e painel recebem a mesma rodada |
 | Ajuste da pressão (nuvem → estação) | volta em todo envio; a estação só grava se mudar 0,05 hPa ou mais |
-| METAR do aeroporto | conferido a cada envio (5 min); o aeroporto publica de hora em hora ou antes, se o tempo mudar |
+| METAR do aeroporto | conferido a cada envio (15 min); o aeroporto publica de hora em hora ou antes, se o tempo mudar |
 | Open-Meteo (condição atual, próximas horas) e TAF | a cada 30 min |
 | Previsão de hoje e amanhã (Open-Meteo) | guardada por 30 min |
 | Conferência das previsões de chuva | a cada envio, para as janelas que terminaram há mais de 20 min |
@@ -280,7 +294,8 @@ No painel, o gráfico de pressão mostra a estação e o QNH do aeroporto juntos
 | App local (`gwethr.local`) | atualiza a cada 5 s |
 | Painel, aba Agora | atualiza a cada 1 min (previsão do dia a cada 15 min) |
 | Painel, aba Chuva | atualiza a cada 2 min |
-| "Online" no painel | último envio há menos de 15 min |
+| Leituras do painel | guardadas na memória da nuvem até 90 s depois do próximo quarto de hora (qualquer envio ou aviso limpa) |
+| "Online" no painel | último envio há menos de 35 min |
 
 Os valores da estação no app local são instantâneos (5 s); os do painel são médias de 5 min, então podem diferir um pouco. Os gráficos de até 2 dias agrupam em 10 min.
 
@@ -433,7 +448,7 @@ GWethr/
     │   ├── weather_math.*    Altitude, pressão ao nível do mar, ponto de orvalho, sensação térmica
     │   ├── display.*         Páginas do OLED
     │   ├── webapi.*          Servidor HTTP e API /api/v1
-    │   ├── uplink.*          Médias de 10 min, fila e envio para a nuvem
+    │   ├── uplink.*          Médias de 5 min, fila e envio em lotes para a nuvem
     │   ├── certs.h           Certificados raiz para HTTPS
     │   └── webpage.h         Página mínima (HTML embutido)
     └── docs/

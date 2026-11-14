@@ -4,10 +4,9 @@ Memória de continuidade entre sessões. O Claude lê isto ao começar e **atual
 Plano geral: `../../docs/PLANO.md` e `../../docs/plano.html`.
 
 ## Arquitetura (v5, projeto GWethr)
-Painel em Nuxt na Vercel (pasta `web/`, projeto `gwethr`; domínio novo, com o antigo
-mantido como alias). O ESP32 mede, mostra no OLED, envia os dados para a nuvem e
+Painel em Nuxt na Vercel (pasta `web/`, projeto `gwethr`; os domínios antigos foram removidos em 29/10). O ESP32 mede, mostra no OLED, envia os dados para a nuvem e
 mantém uma API local + página mínima em `gwethr.local`. Plano v5: Outdoor (dados externos) + Indoor
-(escritório), chuva em 1–3 h, configurações só no ESP32 (fase 12), painel só leitura, WhatsApp na fase 19.
+(escritório), chuva em 1–3 h, configurações só no ESP32 (fase 12), painel só leitura, WhatsApp na fase 20.
 
 ## Estado atual
 - Fases 1–3 concluídas (montagem, sensores, OLED com abertura e páginas).
@@ -204,20 +203,38 @@ mantém uma API local + página mínima em `gwethr.local`. Plano v5: Outdoor (da
   Motivo: outro aparelho no barramento I2C fez o BMP280 marcar 1043 hPa; médias de 07:30/07:35 e a rodada de chuva
   de 07:40 apagadas (a rodada foi recalculada com os dados limpos).
 
+- Nuvem (31/10): o Neon (plano gratuito) estourou a cota mensal de horas de computação por volta de 01:30 e recusou
+  tudo (HTTP 402; a ingestão respondia 500) até a cota renovar, em 1/11 (00:00 UTC, 21:07 no primeiro envio aceito).
+  Causa: envio a cada 5 min e o banco só dorme após 5 min parado, então nunca dormia (~0,25 CU 24 h por dia). A fila
+  da estação segurou as 145+ médias e mandou tudo na volta (nenhuma perdida); a estação reiniciou pela autocura a cada
+  6 h, como previsto. O teste de chuva perdeu 116 rodadas de 31/10, dentro da folga.
+
+- Fase 18 concluída (12/11): teste de 30 dias aprovado. Brier em 1/2/3 h: M2T 0,069/0,100/0,128; M4 0,080/0,104/0,129;
+  M2 0,094/0,144/0,180; M1 0,117/0,152/0,180; M3 0,237/0,248/0,250. Duelos nas mesmas rodadas: M4 vence M1, M2 e M3 e
+  M2T vence M2 nas três janelas. 125 rodadas perdidas de 432 toleradas; 8.598 de 8.640 médias; 122 h de chuva.
+
+- Firmware 0.16.0 (13/11): médias de 5 min enviadas em lotes, logo que fecha cada quarto de hora
+  (`UPLINK_SEND_S` 900; aviso de chuva, cópia da config e fila de antes do reinício continuam saindo na hora), para o
+  banco dormir entre envios. `/api/v1/status`: `cloud.interval_s` passa a ser o intervalo de envio (900) e
+  `cloud.avg_s` o da média (300). Nuvem: rodadas de chuva de 15 min (`ROUND_S`), treino com uma rodada a cada 30 min
+  valendo 1/2 nas rodadas novas (1/3 a cada 20 min nas antigas), cache das rotas de leitura do painel até 90 s depois
+  do próximo quarto de hora (`read-cache.ts`; qualquer POST limpa) e token de leitor guardado por 6 h, "online" no
+  painel até 35 min sem envio.
+
 ## Em andamento
-- Teste de chuva (Fase 18): de 13/10 16:25:22 a 12/11 16:25 (hora local); não recomeça com gravações.
+- Conferir o gasto do Neon com os lotes de 15 min (estimativa: ~70 % da cota mensal).
 - Pendente da fase 7: conferir ~144 médias no primeiro dia completo (resumo por dia).
 
 ## Próximos passos
-1. Fechar a Fase 18 em 12/11: placar do teste (M2T e M4 contra M1–M3), cobertura ≥ 90 %, pelo menos 5 horas de chuva.
-2. Fase 19: interface física (botão em D19, buzzer ativo em D18, LED embutido como retorno visual); ver docs/PLANO.md.
-   Pode ser feita durante o teste de 30 dias (gravação e reinício não o afetam; o código da chuva não muda).
-3. Fase 20: WhatsApp (configurado na página local).
+1. Ajustes da chuva que esperavam o fim do teste: janelas crescentes no M2T/M4 (p2 ≥ p1, p3 ≥ p2), revisar o piso
+   de 70 % do M3, detector de salto de pressão (na estação, com envio imediato), sinal de dia de trovoada (CAPE alto e
+   TSRA no TAF) e, talvez, radar.
+2. Fase 20: WhatsApp (configurado na página local).
 
 ## Problemas conhecidos
 - M2T e M4 treinam uma regressão por janela (1, 2 e 3 h) separadamente; às vezes a chance de 2 h sai 1 ponto abaixo
   da de 1 h (ex.: M4 28 %, 27 %, 30 % às 17:10 de 13/10). Cosmético. Não mexer durante o teste de 30 dias; depois,
-  forçar janelas crescentes (p2 ≥ p1, p3 ≥ p2) na saída.
+  forçar janelas crescentes (p2 ≥ p1, p3 ≥ p2) na saída (próximo passo 1).
 - Log `[W][Wire.cpp] Bus already started in Master Mode` no boot: as bibliotecas chamam `Wire.begin()` de novo. Inofensivo.
 - Abrir a porta serial no macOS reinicia a placa (DTR/RTS).
 - Após reinício por OTA, gwethr.local demora ~5 s no macOS (sem AAAA no mDNS); pelo IP é imediato.

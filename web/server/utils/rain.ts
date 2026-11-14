@@ -1,5 +1,5 @@
 // Chuva nas próximas 1 h, 2 h e 3 h: três métodos, do menos ao mais preciso, calculados a
-// cada 10 min (a cada dois envios da estação), guardados e verificados depois contra o que
+// cada 15 min (a cada envio da estação; de 10 em 10 min até 13/11/2026), guardados e verificados depois contra o que
 // aconteceu (METAR do aeroporto, botão "Está chovendo aqui" e, sem METAR, o modelo).
 //   M1  barômetro da estação: queda da pressão em 1 h e 3 h (descontada a maré diária) e nível
 //   M2  M1 + aeroporto: chuva/trovoada observada ou nas proximidades, nuvens CB/TCU,
@@ -228,10 +228,13 @@ function computeAll(nowS: number, raw: PressureTrend, lon: number | null, m: Met
 
 // --- cálculo, verificação e leitura ---
 
+// Uma rodada por quarto de hora, no envio da estação (firmware 0.16.0 em diante).
+export const ROUND_S = 900
+
 export async function computeRain(deviceId: string): Promise<void> {
   const sql = useSql()
   const nowS = Math.floor(Date.now() / 1000)
-  const bucket = new Date((nowS - (nowS % 600)) * 1000).toISOString()
+  const bucket = new Date((nowS - (nowS % ROUND_S)) * 1000).toISOString()
   const done = (await sql`select 1 from rain_predictions where device_id = ${deviceId} and issued_at = ${bucket} limit 1`) as unknown[]
   if (done.length) return
   const [d] = (await sql`select site, outdoor from devices where id = ${deviceId}`) as { site: Site | null; outdoor: { taf?: OutdoorTaf | null; rain?: RainOutlook | null } | null }[]

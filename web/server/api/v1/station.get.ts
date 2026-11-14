@@ -1,8 +1,7 @@
 // Estação e cópia da configuração enviada por ela, para a aba Estação. Exige login ou token de leitura.
 // Somente leitura: a configuração é feita na página local do ESP32.
 
-export default defineEventHandler(async (event) => {
-  await requireReadAccess(event)
+export default defineReadHandler(async (event) => {
   const sql = useSql()
   const rows = (await sql`
     select id, name, last_seen_at, last_status, station_config, station_config_at

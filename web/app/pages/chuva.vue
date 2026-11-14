@@ -298,7 +298,7 @@ function refreshAll() {
       <ul class="about">
         <li v-for="m in METHODS" :key="m.key"><b>{{ m.name }}</b>: {{ m.about }}</li>
         <li><b>Conferência</b>: choveu na janela se alguém tocou em “Está chovendo aqui” ou se o METAR do aeroporto registrou chuva (fora “nas proximidades”). Se faltar METAR na janela, valem os boletins vizinhos: sem chuva no anterior nem no seguinte (que registra a chuva caída desde o último, o RERA) e sem buraco de mais de 3 h, não choveu; o modelo só decide quando o aeroporto fica mais de 3 h calado. O aviso local vale mais que o aeroporto, que fica a alguns quilômetros: “Não choveu hoje” tira do placar a chuva que o aeroporto registrou no dia.</li>
-        <li><b>Treino</b>: regressão logística com os sinais de cada rodada conferida (últimos 60 dias), puxada para os pesos de partida. Usa uma rodada a cada 20 min, valendo 1/3, porque as previsões de 10 em 10 min se sobrepõem.</li>
+        <li><b>Treino</b>: regressão logística com os sinais de cada rodada conferida (últimos 60 dias), puxada para os pesos de partida. Como as previsões seguidas se sobrepõem, cada hora vale uma rodada: uma a cada 30 min valendo 1/2 (antes de 14/11, uma a cada 20 min valendo 1/3, quando as rodadas eram de 10 min).</li>
       </ul>
     </section>
   </main>

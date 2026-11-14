@@ -47,7 +47,8 @@ const { data: forecast, refresh: refreshFc } = await useFetch<Forecast>('/api/v1
 const { data: rain, refresh: refreshRain } = await useFetch<RainResp>('/api/v1/rain')
 const { data: indoor, refresh: refreshIndoor } = await useFetch<Indoor>('/api/v1/indoor')
 
-// Atualiza a cada minuto (o relógio é o componente SyncTimers); o ESP32 envia médias de 5 min.
+// Atualiza a cada minuto (o relógio é o componente SyncTimers); o ESP32 envia médias de 5 min em
+// lotes a cada 15 min, e as leituras ficam guardadas no cache da nuvem entre um lote e outro.
 const now = ref(Date.now())
 function refreshAll() {
   now.value = Date.now()

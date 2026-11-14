@@ -10,8 +10,7 @@
 
 type Extreme = { v: number; ts: number } | null
 
-export default defineEventHandler(async (event) => {
-  await requireReadAccess(event)
+export default defineReadHandler(async (event) => {
   const range = await resolveRange(event)
   const step = stepFor(range)
   const tz = useRuntimeConfig(event).public.tz as string

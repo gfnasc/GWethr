@@ -1,7 +1,6 @@
 // Leitura mais recente e estado da estação, para o painel. Exige login ou token de leitura.
 
-export default defineEventHandler(async (event) => {
-  await requireReadAccess(event)
+export default defineReadHandler(async (event) => {
   const sql = useSql()
 
   const devices = (await sql`

@@ -42,7 +42,7 @@ struct Lock {
   ~Lock() { if (s_lock) xSemaphoreGive(s_lock); }
 };
 
-// Acumulador do intervalo atual de 10 min (só no loop principal).
+// Acumulador do intervalo atual de 5 min (só no loop principal).
 struct Bucket {
   uint32_t start = 0;  // epoch UTC do início do intervalo
   uint32_t nAht = 0, nBmp = 0;
@@ -83,7 +83,7 @@ static void dropLines(uint32_t n) {
   s_st.queue = countLines();
 }
 
-static void enqueue(const String &line) {
+static void enqueue(const String &line, bool sendNow) {
   Lock l;
   if (s_st.queue >= UPLINK_QUEUE_MAX) {
     log_w("[%s] fila cheia (%u); descartando a média mais antiga", TAG, s_st.queue);
@@ -97,7 +97,7 @@ static void enqueue(const String &line) {
   f.println(line);
   f.close();
   s_st.queue++;
-  s_forceSend = true;  // tenta enviar logo
+  if (sendNow) s_forceSend = true;
 }
 
 static void finishBucket() {
@@ -118,8 +118,10 @@ static void finishBucket() {
     }
     String line;
     serializeJson(doc, line);
-    enqueue(line);
-    log_i("[%s] média de 10 min na fila: %s", TAG, line.c_str());
+    // Envia só quando fecha um quarto de hora (3 médias por lote). Enviar a cada média mantinha o
+    // banco da nuvem acordado o tempo todo e estourou a cota gratuita em 31/10 (0.16.0).
+    enqueue(line, (b.start + UPLINK_INTERVAL_S) % UPLINK_SEND_S == 0);
+    log_i("[%s] média de 5 min na fila: %s", TAG, line.c_str());
   }
   b = Bucket();
 }

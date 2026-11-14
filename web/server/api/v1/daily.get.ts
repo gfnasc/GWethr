@@ -3,8 +3,7 @@
 // Temperatura e umidade da sacada ficam de fora (ver placements); a pressão entra sempre.
 // Traz também a mínima e a máxima de fora (Outdoor) de cada dia.
 
-export default defineEventHandler(async (event) => {
-  await requireReadAccess(event)
+export default defineReadHandler(async (event) => {
   const range = await resolveRange(event)
   const tz = useRuntimeConfig(event).public.tz as string
   const deviceId = await defaultDeviceId()

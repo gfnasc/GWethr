@@ -8,7 +8,8 @@ let timer: ReturnType<typeof setInterval> | undefined
 onMounted(() => (timer = setInterval(() => (now.value = Date.now()), 30_000)))
 onBeforeUnmount(() => clearInterval(timer))
 
-const online = computed(() => !!props.lastSeenAt && now.value - new Date(props.lastSeenAt).getTime() < 15 * 60_000)
+// Online: a estação envia um lote a cada 15 min; a folga cobre uma falha seguida de nova tentativa.
+const online = computed(() => !!props.lastSeenAt && now.value - new Date(props.lastSeenAt).getTime() < 35 * 60_000)
 const ago = computed(() => {
   if (!props.lastSeenAt) return 'nunca'
   const min = Math.round((now.value - new Date(props.lastSeenAt).getTime()) / 60000)

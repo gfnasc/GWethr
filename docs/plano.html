@@ -209,7 +209,7 @@ footer{margin-top:56px;padding-top:18px;border-top:2px solid var(--fg);display:g
     <div class="fact"><span class="k">Foco</span><span class="v">Chuva em 1–3 h</span></div>
     <div class="fact"><span class="k">Painel</span><span class="v">Nuxt na Vercel · só leitura</span></div>
   </div>
-  <span class="status">Fases 1 a 8 e 11 a 17 concluídas · Fase 18 em teste de 30 dias (13/10 16:25 a 12/11 16:25)</span>
+  <span class="status">Fases 1 a 8 e 11 a 19 concluídas · teste de 30 dias aprovado em 12/11 · próxima: ajustes da chuva e WhatsApp (Fase 20)</span>
 </header>
 
 <nav class="toc" aria-label="Seções">
@@ -282,7 +282,7 @@ footer{margin-top:56px;padding-top:18px;border-top:2px solid var(--fg);display:g
     </div>
 
     <h3>Chuva em 1 h, 2 h e 3 h: do menos ao mais preciso</h3>
-    <p class="muted">Cada método calcula, a cada 10 minutos, uma probabilidade de chuva para cada janela (próxima 1 h, 2 h e 3 h) e explica o motivo. Todos ficam registrados no banco para medir o acerto depois. A aba Agora mostra o melhor método disponível, e a nova aba Chuva mostra todos lado a lado.</p>
+    <p class="muted">Cada método calcula, a cada envio da estação (15 minutos; 10 até 13/11), uma probabilidade de chuva para cada janela (próxima 1 h, 2 h e 3 h) e explica o motivo. Todos ficam registrados no banco para medir o acerto depois. A aba Agora mostra o melhor método disponível, e a nova aba Chuva mostra todos lado a lado.</p>
     <div class="tbl"><table>
       <thead><tr><th>Método</th><th>Usa</th><th>Ponto forte e ponto fraco</th><th>Precisão esperada</th></tr></thead>
       <tbody>
@@ -328,8 +328,8 @@ footer{margin-top:56px;padding-top:18px;border-top:2px solid var(--fg);display:g
 
     <h3>Fluxo de dados</h3>
     <div class="flow">
-      <div class="box"><span class="k">Estação (escritório)</span><span>Envia as médias de 10 min (Indoor + pressão) e, junto, uma cópia da configuração e da localização. Não busca mais configuração na nuvem.</span></div>
-      <div class="box"><span class="k">Batida do relógio</span><span>Cada envio da estação, a cada 10 min, dispara as tarefas na nuvem: METAR a cada 10 min, Open-Meteo a cada hora e cálculo da chuva. Assim o cron diário da Vercel não limita nada.</span></div>
+      <div class="box"><span class="k">Estação (escritório)</span><span>Envia as médias de 5 min (Indoor + pressão) em lotes, a cada 15 min, e, junto, uma cópia da configuração e da localização. Não busca mais configuração na nuvem.</span></div>
+      <div class="box"><span class="k">Batida do relógio</span><span>Cada envio da estação, a cada 15 min, dispara as tarefas na nuvem: METAR e cálculo da chuva a cada envio, Open-Meteo a cada 30 min. Assim o cron diário da Vercel não limita nada, e o banco (Neon gratuito) dorme entre os envios: com envios a cada 5 min ele nunca dormia e a cota mensal acabou em 31/10.</span></div>
       <div class="box"><span class="k">Nuvem</span><span>Grava as observações externas, as previsões de cada método e o resultado observado, e calcula o placar. O painel só lê.</span></div>
       <div class="box future"><span class="k">Reserva (opcional)</span><span>Se a estação ficar fora do ar, um agendador externo gratuito pode manter a coleta do Outdoor. Sem ele, o painel avisa “Outdoor desatualizado”.</span></div>
     </div>
@@ -835,10 +835,10 @@ footer{margin-top:56px;padding-top:18px;border-top:2px solid var(--fg);display:g
           <p class="accept"><b>Aceite:</b> 72 h sem travar, sem buracos no histórico e memória estável.</p>
         </div>
       </div>
-      <div class="phase now">
+      <div class="phase done">
         <div class="n">18</div>
         <div class="body">
-          <div class="meta"><h3>Chuva v2: combinado e aprendizado</h3><span class="chip now">Teste de 30 dias em andamento</span><span class="chip">2 dias + teste de 30 dias</span></div>
+          <div class="meta"><h3>Chuva v2: combinado e aprendizado</h3><span class="chip done">Concluída</span><span class="chip">2 dias + teste de 30 dias</span></div>
           <ul>
             <li><b>M2 treinado</b>: só estação + aeroporto (sem o modelo), com os pesos aprendidos no próprio local. Nas primeiras observações, o M2 com pesos fixos já batia com a previsão do Google.</li>
             <li><b>M4</b> combinado: estação + aeroporto + modelo. Os dois aprendem com os ingredientes guardados em cada previsão e com o que aconteceu (METAR e o botão “Está chovendo aqui”), depois de cerca de 20 a 30 chuvas.</li>
@@ -846,20 +846,35 @@ footer{margin-top:56px;padding-top:18px;border-top:2px solid var(--fg);display:g
           </ul>
           <div class="result">
             <span><b>Resultado:</b> M2T e M4 calculados a cada 10 min por regressão logística por janela sobre os sinais do M1/M2 (e o M3, no M4), puxada para os pesos fixos: sem dados, o M2T é igual ao M2 e o M4 é a média do M2 e do M3. Treino a cada 3 h com as previsões conferidas. Botão “Não choveu hoje” no painel e na estação, para tirar do placar a chuva que o aeroporto registra mas não chega aqui. Firmware 0.14.0 com os cinco métodos e os prazos dos testes. Na aba Chuva: mostrador do teste com contagem regressiva e os critérios de aceite, gráfico com M2T, M3 e M4 (M1 e M2 opcionais) e a tabela do que os treinados aprenderam. Teste de 13/10 16:25 a 12/11 16:25. O M5 (radar) fica para depois do teste.</span>
+            <span><b>Teste de 30 dias aprovado (12/11):</b> nos duelos nas mesmas rodadas, o M4 venceu M1, M2 e M3 e o M2T venceu o M2 nas três janelas. 125 rodadas perdidas de 432 toleradas (quase todas na queda da nuvem de 31/10, quando acabou a cota do Neon), 8.598 de 8.640 médias e 122 horas de chuva conferidas. Erro de Brier em 1 h / 2 h / 3 h (menor é melhor):</span>
+            <div class="tbl"><table>
+              <thead><tr><th>Método</th><th>1 h</th><th>2 h</th><th>3 h</th></tr></thead>
+              <tbody>
+                <tr><td><b>M2T</b> · M2 treinado</td><td><b>0,069</b></td><td><b>0,100</b></td><td><b>0,128</b></td></tr>
+                <tr><td><b>M4</b> · combinado treinado</td><td>0,080</td><td>0,104</td><td>0,129</td></tr>
+                <tr><td>M2 · barômetro + aeroporto</td><td>0,094</td><td>0,144</td><td>0,180</td></tr>
+                <tr><td>M1 · barômetro</td><td>0,117</td><td>0,152</td><td>0,180</td></tr>
+                <tr><td>M3 · modelo numérico</td><td>0,237</td><td>0,248</td><td>0,250</td></tr>
+              </tbody>
+            </table></div>
+            <span>O M2T erra cerca de 33 % menos que chutar a frequência média de chuva e continua como destaque; M2T e M4 empatam em 2–3 h. O M3 sozinho exagera (42 % de chance média para chuva em ~13 % das horas), mas ajuda como ingrediente do M4. Ponto fraco de todos: pancadas de verão isoladas. Depois do teste: envio em lotes de 15 min (firmware 0.16.0), rodadas de chuva de 15 min e cache das leituras do painel, para caber na cota do Neon.</span>
           </div>
           <p class="accept"><b>Aceite:</b> num teste de 30 dias, o M4 tem Brier melhor que M1, M2 e M3 nas três janelas, e o M2 treinado melhor que o M2 de pesos fixos.</p>
         </div>
       </div>
-      <div class="phase next">
+      <div class="phase done">
         <div class="n">19</div>
         <div class="body">
-          <div class="meta"><h3>Interface física: botão, buzzer e LED</h3><span class="chip">1–2 dias</span></div>
+          <div class="meta"><h3>Interface física: botão, buzzer e LED</h3><span class="chip done">Concluída</span><span class="chip">1–2 dias</span></div>
           <ul>
             <li><b>Botão</b> (D19): toque troca de página (com a tela apagada, acende por 15 s; com alerta ativo, cala o alerta); segurar 2 s registra “Está chovendo aqui”, com tela de confirmação; segurar 5 s liga ou desliga a tela. Troca de página pelo botão, automática ou as duas, com proteção contra marcas no OLED.</li>
             <li><b>Buzzer</b> (D18, ativo, só bipes curtinhos): bipe ao terminar de ligar, 3 bipes quando o alerta dispara (de novo só se a chance subir de nível), clique nos toques do botão e 2 bipes ao registrar chuva; horário silencioso (padrão 22h–7h); o botão cala.</li>
             <li><b>LED azul embutido</b>: acompanha o botão (aceso, pisca rápido nos 2 s, fixo nos 5 s), confirma o aviso de chuva aceito pela nuvem, pisca duplo com alerta ativo, triplo quando algo falha, rápido na gravação pelo Wi-Fi; sinal de vida a cada leitura; à noite, só avisos.</li>
             <li>Tudo configurado na aba Display do app local; “Testar buzzer” e “Testar alerta” no app.</li>
           </ul>
+          <div class="result">
+            <span><b>Resultado:</b> firmware 0.15.0 a 0.15.6 (25–26/10), aprovado. Segurar 5 s mantém a tela ligada (inclusive à noite); o app local perdeu o carrossel de páginas. O ritmo do buzzer vem de um temporizador, para os bipes saírem iguais; clique e confirmação tocam mesmo no horário silencioso. O alerta de chuva repete os 3 bipes a cada 2 s por até 30 s, com a tela de alerta fixa no mesmo período; um toque no botão cala os dois.</span>
+          </div>
           <p class="accept"><b>Aceite:</b> os três gestos funcionam sem falso disparo; o alerta toca uma vez por subida e respeita o horário silencioso; só o bipe curto programado no boot; o LED segue a prioridade dos avisos.</p>
         </div>
       </div>
