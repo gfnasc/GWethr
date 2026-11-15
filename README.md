@@ -204,7 +204,7 @@ curl -u admin:SENHA -X PUT -H 'Content-Type: application/json' \
 
 O ESP32 calcula médias de 5 min, guarda numa fila na placa (reserva de até 14 dias sem internet) e envia em lotes, a cada quarto de hora, por HTTPS para o app Nuxt em [`web/`](web), que grava no Postgres (Neon) e mostra o painel com login.
 
-**Por que em lotes (firmware 0.16.0):** o Neon gratuito tem uma cota mensal de horas com o banco acordado, e o banco só dorme depois de 5 min parado. Com um envio a cada 5 min ele nunca dormia e a cota acabou em 31/10 (o painel ficou fora até a cota renovar, em 1/11; a fila da estação guardou tudo e nenhuma média se perdeu). Com um lote a cada 15 min o banco dorme entre um envio e outro. Pelo mesmo motivo, as rotas de leitura do painel guardam a resposta na memória da função até logo depois do próximo envio (`web/server/utils/read-cache.ts`): o painel aberto e o app da Gspresso não acordam o banco a cada minuto.
+**Por que em lotes (firmware 0.16.0):** o Neon gratuito tem uma cota mensal de horas com o banco acordado, e o banco só dorme depois de 5 min parado. Com um envio a cada 5 min ele nunca dormia e a cota acabou em 31/10 (o painel ficou fora até a cota renovar, em 1/11; a fila da estação guardou tudo e nenhuma média se perdeu). Com um lote a cada 15 min o banco dorme entre um envio e outro. Pelo mesmo motivo, as rotas de leitura do painel guardam a resposta na memória da função até logo depois do próximo envio (`web/server/utils/read-cache.ts`): o painel aberto e o app da Gspresso não acordam o banco a cada minuto. A exceção é o salto de pressão (firmware 0.17.0), que sai na hora: aviso de tempestade não espera o quarto de hora.
 
 Para montar a sua nuvem do zero (projeto na Vercel, banco, senha do painel e token da estação), siga [web/README.md](web/README.md). Depois, no console serial do ESP32:
 
@@ -238,10 +238,10 @@ A cada envio da estação (a cada 15 min; de 10 em 10 min até 13/11), a nuvem c
 
 | Método | Usa |
 |---|---|
-| M1 · Barômetro | Queda da pressão da estação em 1 h e 3 h, descontada a maré barométrica diária (nos trópicos a pressão cai ~3 hPa entre 10h e 16h todo dia, sem relação com chuva), e nível da pressão |
+| M1 · Barômetro | Subida rápida da pressão da estação (salto: a subida da última hora ou o salto de 20 min que a estação detecta e avisa na hora; aqui as tempestades chegam assim), queda em 1 h e 3 h, tudo descontada a maré barométrica diária (nos trópicos a pressão cai ~3 hPa entre 10h e 16h todo dia, sem relação com chuva), e nível da pressão |
 | M2 · Barômetro + aeroporto | M1 + METAR (chuva ou trovoada no aeroporto ou perto dele, nuvens CB/TCU, ar perto de saturar, teto baixo, rajadas) + TAF (previsão do aeroporto) |
 | M2T · M2 treinado | Os mesmos sinais do M2, com o peso de cada um aprendido pelo placar local |
-| M3 · Modelo numérico | Open-Meteo: probabilidade por hora, chuva prevista em blocos de 15 min e CAPE (energia para trovoada) |
+| M3 · Modelo numérico | Open-Meteo: probabilidade por hora e CAPE (energia para trovoada), sem ajuste local; a chuva prevista em blocos de 15 min entra só no motivo |
 | M4 · Combinado treinado | Estação + aeroporto + modelo, com pesos aprendidos pelo placar |
 
 Quando a janela termina, a previsão é conferida: choveu se alguém tocou em **Está chovendo aqui** (no painel ou na página local) ou se o METAR registrou chuva (fora "nas proximidades"). Se faltar METAR dentro da janela (o aeroporto às vezes fica horas sem publicar de madrugada), valem os boletins vizinhos: sem chuva no anterior nem no seguinte (que registra a chuva caída desde o último, como RERA) e sem buraco de mais de 3 h, não choveu. A chuva estimada pelo modelo só decide quando o aeroporto fica mais de 3 h calado: é cálculo, não observação, e na madrugada de 15/10 marcou chuva com o aeroporto de céu limpo. O aeroporto às vezes registra poucas gotas ou chuva que evapora antes do chão: o botão **Não choveu hoje** (painel e página local, com confirmação; no painel dá para desfazer) tira do placar toda chuva do METAR desde a meia-noite e confere de novo as previsões do dia. O placar de 30 dias mostra o erro de cada método; o destaque (card, página local e OLED) é, entre os métodos com dados suficientes (100 previsões e 5 chuvas), o de menor erro e, até lá, o modelo.
@@ -259,6 +259,12 @@ Quando a janela termina, a previsão é conferida: choveu se alguém tocou em **
 | M3 · modelo numérico | 0,237 | 0,248 | 0,250 |
 
 Nos duelos (cada par só nas rodadas em que os dois saíram), o M4 venceu M1, M2 e M3 e o M2T venceu o M2 nas três janelas, os dois critérios de aceite. Contra a frequência média de chuva (Brier ~0,10 em 1 h), o M2T erra ~33 % menos. M2T e M4 empatam em 2–3 h (no duelo direto o M4 fica 0,002–0,004 à frente) e o M2T ganha em 1 h. O M3 sozinho é pior que a média: exagera (42 % de chance média para chuva em ~13 % das horas), mas é útil como ingrediente do M4. Ponto fraco de todos: pancadas de verão isoladas, que o aeroporto e o barômetro só veem quando chegam.
+
+**Ajustes depois do teste (15/11, firmware 0.17.0):**
+- **Salto de pressão:** nos dados do teste, pressão *subindo* depressa foi o melhor sinal do barômetro: com subida de 1,5 hPa ou mais em 1 h (descontada a maré) choveu em ~9 de cada 10 vezes, e com 1–1,5 hPa em ~1 de cada 3. O M1 tratava subida como tempo firme; agora é o sinal "salto", que cresce com a subida (da última hora ou do salto avisado pela estação, o maior dos dois) e vale por 1 h. Refeito nos dados do teste, o M1 cai de 0,113 para 0,105 de Brier em 1 h; os treinados aprenderam peso 0,6–0,9 para ele.
+- **Detector na estação:** a cada minuto a estação compara a média de pressão dos 2 últimos minutos com a menor média de 1 min dos 20 minutos anteriores (pressão sem calibração, para a calibração automática não parecer um salto). Subida de 1 hPa ou mais manda um envio na hora, fora do lote de 15 min, e a nuvem calcula uma rodada de chuva extra (marcada no minuto); se a chance passar do limite, o alerta de chuva dispara como sempre. Batida de porta e vento encanado duram segundos e quase não mexem na média de 1 min; depois de um salto, o próximo só conta 1 h depois. Os saltos ficam na tabela `pressure_jumps` e na página local (aba Agora, junto dos avisos de chuva).
+- **M3 sem o piso de 70 %:** a regra que levava a chance a 70 % sempre que o modelo previa 0,1 mm só somava alarme falso (Brier em 1 h de 0,240 para 0,218 sem ela). O M3 continua pior que a média: aqui o Open-Meteo exagera (quando diz 90 %, choveu em ~45 % das vezes; quando diz 50–70 %, em ~15 %). O M4 já corrige isso ao aprender o peso do modelo; o treino recalcula o M3 das rodadas antigas com a regra nova.
+- **Janelas crescentes:** chover na próxima 1 h já é chover nas próximas 2 h, então a chance de 2 h nunca fica abaixo da de 1 h, nem a de 3 h abaixo da de 2 h (os treinados têm um modelo por janela e às vezes davam 1 ponto a menos).
 
 ### Pressão calibrada pelo aeroporto
 

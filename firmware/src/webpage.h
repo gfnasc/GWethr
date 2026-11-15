@@ -495,7 +495,7 @@ function renderRain(r){
   const ms=r.fresh&&r.methods,rows=$("mt").tBodies[0].rows;$("mt").hidden=!ms;$("mthelp").hidden=!ms;
   if(ms)["m1","m2","m2t","m3","m4"].forEach((k,j)=>{const v=ms[k];for(let i=0;i<3;i++){const c=rows[j].cells[i+1];c.textContent=v?v[i]+"%":"–";c.className=r.m&&r.m[i]===k.toUpperCase()?"best":""}});
   const al=r.alert;$("ralert").hidden=!al.active;if(al.active)$("ralert").textContent="☂ Alerta: "+al.pct+"% de chance de chuva em até "+al.hours+" h";
-  if(!$("rmsg").dataset.busy)$("rmsg").textContent=r.report_pending||r.no_rain_pending?"enviando aviso…":[r.last_report?"chuva avisada às "+hm(r.last_report):"",r.last_no_rain?"“não choveu hoje” às "+hm(r.last_no_rain):""].filter(Boolean).join(" · ");
+  if(!$("rmsg").dataset.busy)$("rmsg").textContent=r.report_pending||r.no_rain_pending?"enviando aviso…":[r.last_report?"chuva avisada às "+hm(r.last_report):"",r.last_no_rain?"“não choveu hoje” às "+hm(r.last_no_rain):"",r.last_jump?"salto de pressão às "+hm(r.last_jump.at)+" (+"+r.last_jump.dp.toFixed(1).replace(".",",")+" hPa)":""].filter(Boolean).join(" · ");
 }
 $("rrep").onclick=async()=>{$("rrep").disabled=true;$("rmsg").dataset.busy=1;
   try{await post("/api/v1/rain/report");say("rmsg","Aviso registrado. Obrigado: isso entra no placar.")}catch(e){say("rmsg",e.message,1)}

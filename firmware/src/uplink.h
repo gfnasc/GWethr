@@ -5,7 +5,7 @@
 #include "sensors.h"
 
 // Comunicação com a nuvem (Nuxt na Vercel).
-//  - Envio das médias de 10 min (POST /api/v1/ingest). As médias vão primeiro
+//  - Envio das médias de 5 min, em lotes de 15 min (POST /api/v1/ingest). As médias vão primeiro
 //    para uma fila em LittleFS (/queue.jsonl): nada se perde se a internet ou a
 //    nuvem estiverem fora; o envio é retomado depois.
 //  - Cada envio leva uma cópia da configuração (display, calibração e
@@ -27,6 +27,10 @@ struct UplinkStatus {
   bool reportPending = false;
   uint32_t noRainEpoch = 0;       // último aviso "Não choveu hoje" aceito pela nuvem
   bool noRainPending = false;
+  uint32_t jumpEpoch = 0;         // último salto de pressão detectado (UTC)
+  float jumpDp = 0;               // subida, em hPa
+  uint8_t jumpMin = 0;            // em quantos minutos
+  bool jumpPending = false;       // detectado e ainda não aceito pela nuvem
 };
 
 // Testes longos acompanhados pela nuvem (vêm na resposta do envio): fim previsto e situação
@@ -59,7 +63,9 @@ struct RainForecast {
 
 void uplinkBegin();
 
-// Chamar a cada leitura (5 s): acumula a média do intervalo de 10 min.
+// Chamar a cada leitura (5 s): acumula a média do intervalo de 5 min e procura salto de pressão
+// (subida de JUMP_HPA em até JUMP_WINDOW_MIN min, que costuma vir com a frente de uma tempestade:
+// manda o envio na hora, sem esperar o quarto de hora, e a nuvem calcula a chuva de novo).
 void uplinkAddReading(const Reading &r);
 
 // Chamar no loop(): prepara a cópia da configuração quando ela muda.

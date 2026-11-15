@@ -21,15 +21,15 @@ const { data: hist, refresh: refreshHist } = await useFetch<History>('/api/v1/ra
 const { data: latest } = await useFetch<{ device: { last_seen_at: string | null } | null }>('/api/v1/latest')
 
 const METHODS = [
-  { key: 'm1', name: 'M1 · Barômetro', color: '--series-m1', about: 'Queda da pressão da estação em 1 h e 3 h (descontada a variação diária normal) e nível da pressão. Pesos fixos.' },
+  { key: 'm1', name: 'M1 · Barômetro', color: '--series-m1', about: 'Pressão da estação subindo depressa (salto, que aqui chega junto com as tempestades), queda em 1 h e 3 h (descontada a variação diária normal) e nível da pressão. Pesos fixos.' },
   { key: 'm2', name: 'M2 · Barômetro + aeroporto', color: '--series-m2', about: 'M1 mais o METAR (chuva ou trovoada no aeroporto ou perto dele, nuvens CB/TCU, ar perto de saturar, teto baixo, rajadas) e o TAF. Pesos fixos.' },
   { key: 'm2t', name: 'M2T · Barômetro + aeroporto, treinado', color: '--series-m2t', about: 'Os mesmos dados do M2, com o peso de cada sinal aprendido pelo placar. Começou igual ao M2 e muda só o que as conferências sustentam.' },
-  { key: 'm3', name: 'M3 · Modelo numérico', color: '--series-m3', about: 'Open-Meteo: probabilidade por hora, chuva prevista em blocos de 15 min e energia para trovoada (CAPE). Sem ajuste local.' },
+  { key: 'm3', name: 'M3 · Modelo numérico', color: '--series-m3', about: 'Open-Meteo: probabilidade por hora, chuva prevista em blocos de 15 min e energia para trovoada (CAPE). Sem ajuste local (desde 15/11 sem o piso de 70 % quando o modelo previa 0,1 mm).' },
   { key: 'm4', name: 'M4 · Combinado, treinado', color: '--series-m4', about: 'Estação + aeroporto + modelo, com pesos aprendidos pelo placar. Começou como a média do M2 e do M3 e aprende quanto confiar em cada um.' },
 ] as const
 
 const TERM_LABEL: Record<string, string> = {
-  bias: 'Chance de base', queda3: 'Pressão caindo (3 h)', subida3: 'Pressão subindo (3 h)', queda1: 'Pressão caindo (1 h)', baixa: 'Pressão baixa', alta: 'Pressão alta',
+  bias: 'Chance de base', queda3: 'Pressão caindo (3 h)', salto: 'Pressão subindo depressa (salto)', queda1: 'Pressão caindo (1 h)', baixa: 'Pressão baixa', alta: 'Pressão alta',
   chuva_aero: 'Chovendo no aeroporto', proximidades: 'Chuva/trovoada perto do aeroporto', cb: 'Nuvens de trovoada (CB)', tcu: 'Nuvens TCU', saturado: 'Ar perto de saturar',
   seco: 'Ar seco', teto: 'Teto baixo', rajada: 'Rajadas', taf: 'TAF prevê chuva', modelo: 'Modelo numérico (M3)',
 }

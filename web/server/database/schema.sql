@@ -191,3 +191,14 @@ create table if not exists rejected_readings (
   logged_at timestamptz not null default now(),
   primary key (device_id, ts, field)
 );
+
+-- 15/11/2026: saltos de pressão detectados pela estação (subida rápida em 20 min, que costuma vir
+-- com a frente de uma tempestade). A estação avisa na hora, fora do lote de 15 min, e a nuvem
+-- calcula uma rodada de chuva extra; o salto entra no termo "salto" do M1 por 1 h.
+create table if not exists pressure_jumps (
+  device_id text        not null references devices(id) on delete cascade,
+  ts        timestamptz not null,                  -- quando a estação detectou
+  dp        real        not null,                  -- subida, em hPa
+  minutes   smallint    not null,                  -- em quantos minutos
+  primary key (device_id, ts)
+);

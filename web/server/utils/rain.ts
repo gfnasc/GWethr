@@ -1,7 +1,8 @@
 // Chuva nas próximas 1 h, 2 h e 3 h: três métodos, do menos ao mais preciso, calculados a
 // cada 15 min (a cada envio da estação; de 10 em 10 min até 13/11/2026), guardados e verificados depois contra o que
 // aconteceu (METAR do aeroporto, botão "Está chovendo aqui" e, sem METAR, o modelo).
-//   M1  barômetro da estação: queda da pressão em 1 h e 3 h (descontada a maré diária) e nível
+//   M1  barômetro da estação: subida rápida (salto, sinal de tempestade aqui), queda em 1 h e 3 h
+//       (descontada a maré diária) e nível
 //   M2  M1 + aeroporto: chuva/trovoada observada ou nas proximidades, nuvens CB/TCU,
 //       ar perto de saturar, teto baixo, rajadas e TAF (previsão do aeroporto)
 //   M3  modelo numérico (Open-Meteo): probabilidade por hora, chuva em blocos de 15 min, CAPE
@@ -30,11 +31,11 @@ export const levelOf = (p: number) => (p >= 0.6 ? 'alta' : p >= 0.3 ? 'média' :
 
 // --- dados de entrada ---
 
-type PressureTrend = { pres: number | null; d1: number | null; d3: number | null }
+type PressureTrend = { pres: number | null; d1: number | null; d3: number | null; jump_dp?: number | null; jump_min?: number | null }
 
 async function pressureTrend(deviceId: string): Promise<PressureTrend> {
   const sql = useSql()
-  const [r] = (await sql`
+  const [[r], [j]] = (await Promise.all([sql`
     with last as (
       select ts, pres_slp from readings where device_id = ${deviceId} and pres_slp is not null and ts > now() - interval '30 minutes'
       order by ts desc limit 1)
@@ -45,8 +46,13 @@ async function pressureTrend(deviceId: string): Promise<PressureTrend> {
       l.pres_slp - (select pres_slp from readings r where r.device_id = ${deviceId} and r.pres_slp is not null
         and r.ts between l.ts - interval '200 minutes' and l.ts - interval '160 minutes'
         order by abs(extract(epoch from r.ts - (l.ts - interval '3 hours'))) limit 1) as d3
-    from last l`) as PressureTrend[]
-  return r ?? { pres: null, d1: null, d3: null }
+    from last l`,
+    // Salto avisado pela estação na última hora (vale por 1 h).
+    sql`select dp, extract(epoch from now() - ts) / 60 as age from pressure_jumps
+      where device_id = ${deviceId} and ts > now() - interval '60 minutes' order by ts desc limit 1`,
+  ])) as [PressureTrend[], { dp: number; age: number }[]]
+  if (!r) return { pres: null, d1: null, d3: null }
+  return j ? { ...r, jump_dp: round2(j.dp), jump_min: Math.round(Number(j.age)) } : r
 }
 
 export type MetarNow = {
@@ -96,7 +102,7 @@ function detide(p: PressureTrend, nowS: number, lon: number | null): PressureTre
   if (lon == null) return { ...p, tide3: null }
   const t = (back: number) => tideHpa(nowS, lon) - tideHpa(nowS - back, lon)
   return {
-    pres: p.pres,
+    ...p,
     d1: p.d1 == null ? null : p.d1 - t(3600),
     d3: p.d3 == null ? null : p.d3 - t(3 * 3600),
     tide3: Math.round(t(3 * 3600) * 10) / 10,
@@ -106,18 +112,30 @@ function detide(p: PressureTrend, nowS: number, lon: number | null): PressureTre
 // Cada regra do M1 e do M2 é um termo com nome: valor (contribuição na escala logit, com os
 // pesos fixos) e motivo. O M2 treinado e o M4 reaprendem o peso de cada termo pelo placar.
 export type Term = { key: TermKey; v: number; why: string }
-export const TERM_KEYS = ['queda3', 'subida3', 'queda1', 'baixa', 'alta', 'chuva_aero', 'proximidades', 'cb', 'tcu', 'saturado', 'seco', 'teto', 'rajada', 'taf'] as const
+export const TERM_KEYS = ['queda3', 'salto', 'queda1', 'baixa', 'alta', 'chuva_aero', 'proximidades', 'cb', 'tcu', 'saturado', 'seco', 'teto', 'rajada', 'taf'] as const
 export type TermKey = (typeof TERM_KEYS)[number]
 export const BASE_LOGIT = -2.2 // ~10 %: chance de base de chover numa hora qualquer
 
-export function m1Terms(p: { pres?: number | null; d1?: number | null; d3?: number | null; tide3?: number | null }): { terms: Term[]; notes: string[] } | null {
+type M1Input = { pres?: number | null; d1?: number | null; d3?: number | null; tide3?: number | null; jump_dp?: number | null; jump_min?: number | null }
+
+export function m1Terms(p: M1Input): { terms: Term[]; notes: string[] } | null {
   if (p.pres == null) return null
   const terms: Term[] = []
   const notes: string[] = []
+  // Pressão subindo depressa: aqui as tempestades chegam com um salto de pressão para cima (o vento
+  // frio da frente), e não com a queda dos livros. No teste de 30 dias, subida de 1,5 hPa ou mais em
+  // 1 h (descontada a maré) veio com chuva em ~9 de cada 10 vezes; até 15/11/2026 o M1 tratava
+  // subida como tempo firme. Vale a maior subida: a da última hora ou o salto que a estação
+  // detectou (em até 20 min, avisado na hora).
+  const jump = p.jump_dp != null && p.jump_dp > (p.d1 ?? -Infinity)
+  const rise = Math.max(p.d1 ?? -Infinity, p.jump_dp ?? -Infinity)
+  if (rise >= 0.5) {
+    const why = jump ? `salto de pressão na estação (+${n1(rise)} hPa${p.jump_min != null ? `, há ${p.jump_min} min` : ''})` : `pressão subiu ${n1(rise)} hPa na última hora`
+    terms.push({ key: 'salto', v: Math.min(3.5, 2.2 * (rise - 0.5)), why })
+  }
   if (p.d3 != null) {
     if (p.d3 <= -0.5) terms.push({ key: 'queda3', v: Math.min(2, -0.6 * p.d3), why: `pressão caiu ${n1(-p.d3)} hPa em 3 h` })
-    else if (p.d3 >= 2) terms.push({ key: 'subida3', v: -0.5, why: `pressão subindo (+${n1(p.d3)} hPa em 3 h)` })
-    else notes.push('pressão estável')
+    else if (p.d3 < 0.5 && rise < 0.5) notes.push('pressão estável')
   }
   if (p.d1 != null && p.d1 <= -0.5) terms.push({ key: 'queda1', v: p.d1 <= -1 ? 0.8 : 0.4, why: `queda de ${n1(-p.d1)} hPa na última hora` })
   if (p.pres < 1010) terms.push({ key: 'baixa', v: p.pres < 1005 ? 0.8 : 0.4, why: `pressão baixa (${Math.round(p.pres)} hPa)` })
@@ -164,6 +182,17 @@ function tafBonus(taf: OutdoorTaf | null | undefined, fromS: number, toS: number
 
 type OutdoorTaf = { at: number; groups: TafGroup[]; raw: string }
 
+// Chance do M3 a partir das horas do modelo: 70 % da hora mais provável + 30 % da chance de alguma
+// hora ter chuva, mais 5 pontos com CAPE alto. Até 15/11/2026 subia para pelo menos 70 % sempre
+// que o modelo previa 0,1 mm: no teste de 30 dias essa regra só somava alarme falso (Brier em 1 h
+// de 0,240 para 0,218 sem ela). O treino do M4 recalcula o M3 das rodadas antigas por aqui.
+export function m3Prob(f: { pps: number[]; cape?: number | null }): number {
+  const pMax = Math.max(...f.pps)
+  const pUnion = 1 - f.pps.reduce((a, q) => a * (1 - q), 1)
+  const prob = 0.7 * pMax + 0.3 * pUnion + ((f.cape ?? 0) >= 1000 ? 0.05 : 0)
+  return Math.min(1, prob)
+}
+
 function computeAll(nowS: number, raw: PressureTrend, lon: number | null, m: MetarNow | null, taf: OutdoorTaf | null | undefined, outlook: RainOutlook | null | undefined, models: LearnedModels): Pred[] {
   const out: Pred[] = []
   const p = detide(raw, nowS, lon)
@@ -195,15 +224,13 @@ function computeAll(nowS: number, raw: PressureTrend, lon: number | null, m: Met
       if (!hours.length) continue
       const pps = hours.map((x) => x.pp! / 100)
       const pMax = Math.max(...pps)
-      const pUnion = 1 - pps.reduce((a, q) => a * (1 - q), 1)
-      let prob = 0.7 * pMax + 0.3 * pUnion
       const peak = hours[pps.indexOf(pMax)]!
       const why = [`modelo: ${pct(pMax)} na hora mais provável (${new Date(peak.t * 1000).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: useRuntimeConfig().public.tz as string })})`]
       const mm = outlook.m15.filter((x) => x.t >= nowS - 900 && x.t < end && x.mm != null).reduce((a, x) => a + x.mm!, 0)
-      if (mm >= 0.1) { prob = Math.max(prob, 0.7); why.push(`${n1(mm)} mm previstos`) }
+      if (mm >= 0.1) why.push(`${n1(mm)} mm previstos`)
       const cape = Math.max(...hours.map((x) => x.cape ?? 0))
-      if (cape >= 1000) { prob = Math.min(1, prob + 0.05); why.push(`energia para trovoada (CAPE ${Math.round(cape)})`) }
-      out.push({ method: 'm3', horizon: h, prob: round2(Math.min(1, prob)), reason: why.join(', '), features: { pps, mm: round2(mm), cape } })
+      if (cape >= 1000) why.push(`energia para trovoada (CAPE ${Math.round(cape)})`)
+      out.push({ method: 'm3', horizon: h, prob: round2(m3Prob({ pps, cape })), reason: why.join(', '), features: { pps, mm: round2(mm), cape } })
     }
   }
 
@@ -223,18 +250,33 @@ function computeAll(nowS: number, raw: PressureTrend, lon: number | null, m: Met
       out.push({ method: 'm4', horizon: h, prob: round2(r.prob), reason: [`modelo ${pct(p3.prob)}`, ...(top.length ? top : [whyOf(r.ranked, base?.notes)])].filter(Boolean).join(', '), features: r.features })
     }
   }
+
+  // Janelas crescentes: chover na próxima 1 h já é chover nas próximas 2 h. Os treinados têm um
+  // modelo por janela e às vezes davam 2 h abaixo de 1 h; a janela maior fica com pelo menos a
+  // chance da menor.
+  for (const method of METHODS) {
+    let floor = 0
+    for (const h of HORIZONS) {
+      const q = out.find((x) => x.method === method && x.horizon === h)
+      if (!q) continue
+      q.prob = Math.max(q.prob, floor)
+      floor = q.prob
+    }
+  }
   return out
 }
 
 // --- cálculo, verificação e leitura ---
 
-// Uma rodada por quarto de hora, no envio da estação (firmware 0.16.0 em diante).
+// Uma rodada por quarto de hora, no envio da estação (firmware 0.16.0 em diante). Um salto de
+// pressão avisado pela estação pede uma rodada extra na hora (`now`), marcada no minuto.
 export const ROUND_S = 900
 
-export async function computeRain(deviceId: string): Promise<void> {
+export async function computeRain(deviceId: string, now = false): Promise<void> {
   const sql = useSql()
   const nowS = Math.floor(Date.now() / 1000)
-  const bucket = new Date((nowS - (nowS % ROUND_S)) * 1000).toISOString()
+  const step = now ? 60 : ROUND_S
+  const bucket = new Date((nowS - (nowS % step)) * 1000).toISOString()
   const done = (await sql`select 1 from rain_predictions where device_id = ${deviceId} and issued_at = ${bucket} limit 1`) as unknown[]
   if (done.length) return
   const [d] = (await sql`select site, outdoor from devices where id = ${deviceId}`) as { site: Site | null; outdoor: { taf?: OutdoorTaf | null; rain?: RainOutlook | null } | null }[]

@@ -2,7 +2,7 @@
 
 // Pinos e constantes. Mantenha docs/hardware.md sincronizado.
 
-#define FW_VERSION "0.16.0"
+#define FW_VERSION "0.17.0"
 
 // Barramento I2C (AHT20, BMP280 e OLED compartilham)
 #define PIN_I2C_SDA 21
@@ -66,6 +66,9 @@
 // Nuvem
 #define UPLINK_INTERVAL_S 300              // médias de 5 min
 #define UPLINK_SEND_S 900                  // envio em lotes nos quartos de hora: o banco da nuvem dorme entre eles
+#define JUMP_HPA 1.0f                      // salto de pressão: subida mínima (hPa)...
+#define JUMP_WINDOW_MIN 20                 // ...em até tantos minutos; avisa a nuvem na hora
+#define JUMP_COOLDOWN_S 3600               // depois de um salto, o próximo só conta 1 h depois
 #define UPLINK_BATCH_MAX 48                // médias por envio (4 h)
 #define UPLINK_QUEUE_MAX 4032              // reserva offline: 14 dias
 #define UPLINK_RETRY_MS 600000

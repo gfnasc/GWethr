@@ -122,12 +122,16 @@ export async function trainRain(deviceId: string, force = false): Promise<number
     select horizon_h, bool_or(outcome) as y, issued_at >= ${ROUNDS_15_FROM} as r15,
       (array_agg(features) filter (where method = 'm1'))[1] as f1,
       (array_agg(features) filter (where method = 'm2'))[1] as f2,
+      (array_agg(features) filter (where method = 'm3'))[1] as f3,
       max(prob) filter (where method = 'm3') as p3
     from rain_predictions
     where device_id = ${deviceId} and outcome is not null and method in ('m1', 'm2', 'm3') and issued_at > now() - make_interval(days => ${TRAIN_DAYS})
       and ((issued_at < ${ROUNDS_15_FROM} and extract(minute from issued_at)::int % 20 = 0)
         or (issued_at >= ${ROUNDS_15_FROM} and extract(minute from issued_at)::int % 30 = 0))
-    group by issued_at, horizon_h`) as { horizon_h: number; y: boolean; r15: boolean; f1: any; f2: any; p3: number | null }[]
+    group by issued_at, horizon_h`) as { horizon_h: number; y: boolean; r15: boolean; f1: any; f2: any; f3: any; p3: number | null }[]
+  // O M3 das rodadas antigas é recalculado com a regra de hoje (sem o piso de 70 %, até 15/11/2026),
+  // para o peso do modelo no M4 ser aprendido com o mesmo M3 que ele recebe agora.
+  for (const d of data) if (Array.isArray(d.f3?.pps) && d.f3.pps.length) d.p3 = Math.round(m3Prob(d.f3) * 100) / 100
 
   const out: { method: Learned; h: number; w: Weights; n: number; events: number }[] = []
   for (const method of ['m2t', 'm4'] as Learned[]) {

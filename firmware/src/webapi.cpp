@@ -322,6 +322,15 @@ static void handleRain() {
   if (u.noRainEpoch) doc["last_no_rain"] = u.noRainEpoch;
   else doc["last_no_rain"] = nullptr;
   doc["no_rain_pending"] = u.noRainPending;
+  if (u.jumpEpoch) {
+    JsonObject j = doc["last_jump"].to<JsonObject>();
+    j["at"] = u.jumpEpoch;
+    j["dp"] = u.jumpDp;
+    j["min"] = u.jumpMin;
+    j["pending"] = u.jumpPending;
+  } else {
+    doc["last_jump"] = nullptr;
+  }
   sendJson(200, doc);
 }
 

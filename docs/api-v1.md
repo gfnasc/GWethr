@@ -163,8 +163,11 @@ Chance de chuva recebida da nuvem e estado do alerta no display.
   "reason": "modelo: 36 % na hora mais provável (13:00), energia para trovoada (CAPE 1760)",
   "methods": { "m1": [10, 15, 20], "m2": [21, 32, 40], "m2t": [14, 21, 26], "m3": [75, 75, 75], "m4": [31, 32, 34] },
   "alert": { "active": false, "hours": 0, "pct": 0, "enabled": true, "threshold": 60, "window": 2 },
-  "last_report": null, "report_pending": false, "last_no_rain": null, "no_rain_pending": false }
+  "last_report": null, "report_pending": false, "last_no_rain": null, "no_rain_pending": false,
+  "last_jump": { "at": 1794739380, "dp": 1.24, "min": 14, "pending": false } }
 ```
+`last_jump` (firmware 0.17.0): último salto de pressão detectado desde que a estação ligou (`null` se nenhum): quando, subida em hPa, em quantos minutos e se ainda aguarda a nuvem aceitar.
+
 `fresh`: previsão com até 35 min (depois a estação deixa de mostrar). `p`/`m`: destaque de cada janela; `methods`: os cinco métodos, M1, M2, M2T (M2 treinado), M3 e M4 (combinado treinado), com `null` se o método não teve dados na rodada.
 
 `cloud.interval_s` (em `/api/v1/status`): intervalo entre envios, 900 s desde o firmware 0.16.0 (um lote com as médias de 5 min logo que fecha cada quarto de hora; antes, 300 s); `cloud.avg_s`: duração de cada média (300 s).
@@ -196,7 +199,8 @@ Recebe um lote de médias de 5 min do ESP32 (de 10 min antes do firmware 0.12.0)
   ],
   "status": { "fw": "0.13.2", "rssi": -57, "uptime_s": 563, "heap": 220132, "heap_min": 127316, "queue": 0,
               "reset": "atualização pelo Wi-Fi", "boots": 4 },
-  "config": { "display": { "...": "..." }, "calibration": { "...": "..." }, "location": { "lat": null, "lon": null, "label": "" } }
+  "config": { "display": { "...": "..." }, "calibration": { "...": "..." }, "location": { "lat": null, "lon": null, "label": "" } },
+  "jump": { "ts": 1794739380, "dp": 1.24, "min": 14 }
 }
 ```
 
@@ -210,6 +214,7 @@ Recebe um lote de médias de 5 min do ESP32 (de 10 min antes do firmware 0.12.0)
 | `dew` | −60 a 60, ou ausente/`null` |
 | `readings` | Até 500 por lote |
 | `status` | Opcional; guardado como o último estado da estação |
+| `jump` | Opcional (firmware 0.17.0): salto de pressão que a estação acabou de detectar (`ts` epoch UTC da última hora, `dp` subida em hPa entre 0 e 20, `min` minutos entre 1 e 60). Vem num envio imediato, fora do lote de 15 min; é gravado em `pressure_jumps` (repetido é ignorado) e, se é novo, a nuvem calcula uma rodada de chuva extra, marcada no minuto, e o M1 passa a usar o salto por 1 h. Inválido é ignorado sem recusar as médias |
 | `config` | Opcional; cópia validada com as regras de [Configuração](#configuração-da-estação-cópia) e guardada para a aba Estação. A localização vira a usada pelos dados externos. Cópia inválida é ignorada sem recusar as médias |
 
 Horários já recebidos são ignorados, então o ESP32 pode reenviar com segurança.

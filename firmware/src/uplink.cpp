@@ -50,6 +50,19 @@ struct Bucket {
 };
 static Bucket s_bucket;
 
+// Detector de salto de pressão (só no loop principal; o resultado vai para s_st com s_lock).
+// Médias de 1 min da pressão sem calibração (a calibração automática muda o desvio de vez em
+// quando, e isso pareceria um salto). Salto = média dos 2 últimos minutos menos a menor média de
+// 1 min dos JUMP_WINDOW_MIN minutos anteriores. Batida de porta ou vento encanado mexem na pressão
+// por segundos e quase não pesam na média de 1 min.
+static const int JUMP_SLOTS = JUMP_WINDOW_MIN + 2;
+static float s_minPres[JUMP_SLOTS];  // anel: s_minPres[(s_minHead - 1 - k) % JUMP_SLOTS] = k minutos atrás
+static int s_minHead = 0, s_minFilled = 0;
+static uint32_t s_minStart = 0;
+static double s_minSum = 0;
+static uint16_t s_minN = 0;
+static uint32_t s_lastJump = 0;
+
 // --- fila em LittleFS (chamar com s_lock) ---
 
 static uint32_t countLines() {
@@ -126,9 +139,54 @@ static void finishBucket() {
   b = Bucket();
 }
 
+static float minutesAgo(int k) { return s_minPres[((s_minHead - 1 - k) % JUMP_SLOTS + JUMP_SLOTS) % JUMP_SLOTS]; }
+
+static void checkJump(uint32_t now) {
+  if (s_minFilled < 12) return;  // pelo menos 10 min de referência
+  float a = minutesAgo(0), b = minutesAgo(1);
+  if (isnan(a) || isnan(b)) return;
+  float cur = (a + b) / 2, low = NAN;
+  int lowAt = 0;
+  for (int k = 2; k < s_minFilled; k++) {
+    float v = minutesAgo(k);
+    if (!isnan(v) && (isnan(low) || v < low)) low = v, lowAt = k;
+  }
+  if (isnan(low) || cur - low < JUMP_HPA) return;
+  if (s_lastJump && now - s_lastJump < JUMP_COOLDOWN_S) return;
+  s_lastJump = now;
+  log_i("[%s] salto de pressão: +%.2f hPa em %d min; avisando a nuvem", TAG, cur - low, lowAt);
+  Lock l;
+  s_st.jumpEpoch = now;
+  s_st.jumpDp = roundf((cur - low) * 100) / 100;
+  s_st.jumpMin = lowAt;
+  s_st.jumpPending = true;
+  s_forceSend = true;
+}
+
+static void addJumpSample(const Reading &r, uint32_t now) {
+  uint32_t minute = now - now % 60;
+  if (minute != s_minStart) {
+    if (s_minStart) {
+      if (minute - s_minStart > 120) s_minFilled = 0;  // buraco nas leituras: recomeça a referência
+      s_minPres[s_minHead] = s_minN >= 6 ? (float)(s_minSum / s_minN) : NAN;
+      s_minHead = (s_minHead + 1) % JUMP_SLOTS;
+      if (s_minFilled < JUMP_SLOTS) s_minFilled++;
+      checkJump(now);
+    }
+    s_minStart = minute;
+    s_minSum = 0;
+    s_minN = 0;
+  }
+  if (r.bmpOk && !isnan(r.seaLevelRawHpa)) {
+    s_minSum += r.seaLevelRawHpa;
+    s_minN++;
+  }
+}
+
 void uplinkAddReading(const Reading &r) {
   if (!netStatus().timeSynced) return;  // sem hora certa não dá para carimbar o intervalo
   uint32_t now = (uint32_t)time(nullptr);
+  addJumpSample(r, now);
   uint32_t start = now - now % UPLINK_INTERVAL_S;
   if (s_bucket.start != start) {
     if (s_bucket.start) finishBucket();
@@ -323,8 +381,14 @@ static void sendBatch() {
     } else {
       s_st.queue = 0;
     }
-    if (n == 0 && !s_st.configPending) return;
+    if (n == 0 && !s_st.configPending && !s_st.jumpPending) return;
     if (s_configCopy.length()) doc["config"] = serialized(s_configCopy);
+    if (s_st.jumpPending) {
+      JsonObject j = doc["jump"].to<JsonObject>();
+      j["ts"] = s_st.jumpEpoch;
+      j["dp"] = s_st.jumpDp;
+      j["min"] = s_st.jumpMin;
+    }
     JsonObject st = doc["status"].to<JsonObject>();
     st["fw"] = FW_VERSION;
     st["rssi"] = WiFi.RSSI();
@@ -345,6 +409,7 @@ static void sendBatch() {
   if (code == 200) {
     if (n) dropLines(n);
     s_st.lastOkEpoch = (uint32_t)time(nullptr);
+    if (body.indexOf("\"jump\":") >= 0) s_st.jumpPending = false;
     if (body.indexOf("\"config\":") >= 0) {
       s_st.configSentEpoch = s_st.lastOkEpoch;
       s_st.configPending = false;
@@ -407,8 +472,8 @@ static void netTask(void *) {
       configured = s_st.configured;
       reportDue = (s_st.reportPending || s_st.noRainPending) && (!s_reportRetryAt || (int32_t)(millis() - s_reportRetryAt) >= 0);
       bool backoffOk = !s_backoffMs || (int32_t)(millis() - s_nextAttemptMs) >= 0;
-      bool work = s_st.queue > 0 || s_st.configPending;
-      sendDue = work && backoffOk && (s_forceSend || s_st.configPending || s_backoffMs);
+      bool work = s_st.queue > 0 || s_st.configPending || s_st.jumpPending;
+      sendDue = work && backoffOk && (s_forceSend || s_st.configPending || s_st.jumpPending || s_backoffMs);
     }
     if (!configured || !n.connected || !n.timeSynced) continue;  // TLS precisa da hora certa
     if (reportDue) sendReport();

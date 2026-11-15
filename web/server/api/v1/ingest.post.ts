@@ -5,6 +5,8 @@ import { waitUntil } from '@vercel/functions'
 // Autenticação: Authorization: Bearer <token do aparelho>.
 // Horários repetidos são ignorados (o ESP32 pode reenviar após falha). O lote pode vir
 // vazio quando a estação só quer mandar a cópia da configuração.
+// `jump` (firmware 0.17.0 em diante): salto de pressão que a estação acabou de detectar. Vem num
+// envio imediato, fora do lote de 15 min, e pede uma rodada de chuva extra na hora.
 
 type Reading = { ts: number; temp?: number | null; hum?: number | null; pres_slp?: number | null; pres_raw?: number | null; dew?: number | null }
 
@@ -19,7 +21,7 @@ function num(v: unknown, lo: number, hi: number): number | null {
 
 export default defineEventHandler(async (event) => {
   const deviceId = await requireDevice(event)
-  const body = await readBody<{ readings?: Reading[]; status?: Record<string, unknown>; config?: unknown }>(event)
+  const body = await readBody<{ readings?: Reading[]; status?: Record<string, unknown>; config?: unknown; jump?: { ts?: unknown; dp?: unknown; min?: unknown } }>(event)
 
   const list = body?.readings
   if (!Array.isArray(list)) throw createError({ statusCode: 400, message: 'readings deve ser uma lista' })
@@ -56,6 +58,20 @@ export default defineEventHandler(async (event) => {
       on conflict (device_id, ts) do nothing
       returning ts`
     accepted = rows.length
+  }
+
+  // Salto de pressão: grava (repetido é ignorado) e, se é novo, calcula a chuva na hora.
+  let jumpNew = false
+  const j = body.jump
+  if (j && typeof j === 'object') {
+    const jts = Number(j.ts), dp = Number(j.dp), min = Number(j.min)
+    const nowS = Date.now() / 1000
+    if (Number.isInteger(jts) && jts > nowS - 3600 && jts < nowS + 300 && dp > 0 && dp < 20 && min > 0 && min <= 60) {
+      const ins = await sql`insert into pressure_jumps (device_id, ts, dp, minutes) values (${deviceId}, ${new Date(jts * 1000).toISOString()}, ${dp}, ${Math.round(min)})
+        on conflict do nothing returning 1`
+      jumpNew = ins.length > 0
+      if (jumpNew) console.log(`${deviceId}: salto de pressão de +${dp} hPa em ${min} min`)
+    }
   }
 
   const statusJson = body.status && typeof body.status === 'object' ? JSON.stringify(body.status) : null
@@ -98,7 +114,7 @@ export default defineEventHandler(async (event) => {
   // A previsão de chuva desta rodada é calculada antes da resposta (é rápida: usa os dados de
   // fora já coletados), para a estação receber a mesma previsão que o painel mostra. A coleta
   // de fora e a verificação das janelas que terminaram rodam depois, para a próxima rodada.
-  await computeRain(deviceId).catch((e) => console.warn('previsão de chuva falhou:', (e as Error).message))
+  await computeRain(deviceId, jumpNew).catch((e) => console.warn('previsão de chuva falhou:', (e as Error).message))
   const job = (async () => {
     await collectOutdoor(deviceId).catch((e) => console.warn('coleta Outdoor falhou:', (e as Error).message))
     await verifyRain(deviceId).catch((e) => console.warn('verificação da chuva falhou:', (e as Error).message))

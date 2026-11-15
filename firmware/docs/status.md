@@ -220,21 +220,32 @@ mantém uma API local + página mínima em `gwethr.local`. Plano v5: Outdoor (da
   valendo 1/2 nas rodadas novas (1/3 a cada 20 min nas antigas), cache das rotas de leitura do painel até 90 s depois
   do próximo quarto de hora (`read-cache.ts`; qualquer POST limpa) e token de leitor guardado por 6 h, "online" no
   painel até 35 min sem envio.
+- Firmware 0.17.0 (15/11), ajustes da chuva que esperavam o fim do teste:
+  - Detector de salto de pressão em `uplink.cpp` (`addJumpSample`/`checkJump`): médias de 1 min da pressão sem
+    calibração; média dos 2 últimos minutos − menor média dos 20 min anteriores ≥ `JUMP_HPA` (1,0) dispara um envio
+    na hora com `jump` no corpo; um salto a cada `JUMP_COOLDOWN_S` (1 h). `/api/v1/rain` ganhou `last_jump`, e a
+    página local mostra o salto junto dos avisos de chuva. Testado no Mac com dados simulados (porta batendo e maré
+    não disparam; +1,5 hPa em 8 min dispara uma vez).
+  - Nuvem: tabela `pressure_jumps`; o ingest grava o salto e calcula uma rodada extra (`computeRain(id, true)`,
+    marcada no minuto). Termo `salto` no M1 (no lugar de `subida3`, que dava −0,5 para pressão subindo): maior subida
+    entre a da última hora (d1 sem a maré) e o salto da estação (1 h), `v = min(3,5; 2,2 × (subida − 0,5))`. M3 sem
+    o piso de 70 % (`m3Prob`; o treino recalcula o M3 das rodadas antigas pelas features). Janelas crescentes na
+    saída de todos os métodos. Pesos refeitos na hora: `salto` 0,94/0,73/0,62 no M2T e 0,88/0,72/0,63 no M4.
+  - Análise (dados do teste): subida de 1,5 hPa ou mais em 1 h teve chuva em ~89 % das rodadas, 1–1,5 hPa em 34 %;
+    M1 refeito com o salto: Brier 0,113 → 0,105 (1 h). M3 sem o piso: 0,240 → 0,218; o Open-Meteo exagera aqui
+    (90 % → ~45 % de chuva; 50–70 % → ~15 %).
 
 ## Em andamento
 - Conferir o gasto do Neon com os lotes de 15 min (estimativa: ~70 % da cota mensal).
 - Pendente da fase 7: conferir ~144 médias no primeiro dia completo (resumo por dia).
 
 ## Próximos passos
-1. Ajustes da chuva que esperavam o fim do teste: janelas crescentes no M2T/M4 (p2 ≥ p1, p3 ≥ p2), revisar o piso
-   de 70 % do M3, detector de salto de pressão (na estação, com envio imediato), sinal de dia de trovoada (CAPE alto e
-   TSRA no TAF) e, talvez, radar.
-2. Fase 20: WhatsApp (configurado na página local).
+1. Acompanhar os primeiros saltos reais (`pressure_jumps`, aba Chuva) e o placar do M1 com o sinal novo.
+2. Ideias da chuva ainda abertas: calibrar o M3 (o Open-Meteo exagera aqui), sinal de dia de trovoada (CAPE alto e
+   TSRA no TAF) e, talvez, radar ou o AS3935.
+3. Fase 20: WhatsApp (configurado na página local).
 
 ## Problemas conhecidos
-- M2T e M4 treinam uma regressão por janela (1, 2 e 3 h) separadamente; às vezes a chance de 2 h sai 1 ponto abaixo
-  da de 1 h (ex.: M4 28 %, 27 %, 30 % às 17:10 de 13/10). Cosmético. Não mexer durante o teste de 30 dias; depois,
-  forçar janelas crescentes (p2 ≥ p1, p3 ≥ p2) na saída (próximo passo 1).
 - Log `[W][Wire.cpp] Bus already started in Master Mode` no boot: as bibliotecas chamam `Wire.begin()` de novo. Inofensivo.
 - Abrir a porta serial no macOS reinicia a placa (DTR/RTS).
 - Após reinício por OTA, gwethr.local demora ~5 s no macOS (sem AAAA no mDNS); pelo IP é imediato.
